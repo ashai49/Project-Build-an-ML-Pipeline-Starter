@@ -20,12 +20,12 @@ modeling:
   val_size: 0.2
   random_seed: 42
   stratify_by: "neighbourhood_group"
-  max_tfidf_features: 5
+  max_tfidf_features: 50
   random_forest:
     n_estimators: 100
-    max_depth: 15
-    min_samples_split: 4
-    min_samples_leaf: 3
+    max_depth: 10
+    min_samples_split: 2
+    min_samples_leaf: 1
     n_jobs: -1
     criterion: squared_error
     max_features: 0.5
