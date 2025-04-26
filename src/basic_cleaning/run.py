@@ -1,99 +1,55 @@
-#!/usr/bin/env python
-"""
-Download from W&B the raw dataset and apply some basic data cleaning, exporting the result to a new artifact
-"""
 import argparse
-import logging
-import wandb
 import pandas as pd
+import mlflow
+import os
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
-logger = logging.getLogger()
+def go(input_artifact, output_artifact, output_type, output_description, min_price, max_price):
 
-# DO NOT MODIFY
-def go(args):
+    with mlflow.start_run():
 
-    run = wandb.init(job_type="basic_cleaning")
-    run.config.update(args)
+        mlflow.log_param("input_artifact", input_artifact)
+        mlflow.log_param("output_artifact", output_artifact)
+        mlflow.log_param("output_type", output_type)
+        mlflow.log_param("output_description", output_description)
+        mlflow.log_param("min_price", min_price)
+        mlflow.log_param("max_price", max_price)
 
-    # Download input artifact. This will also log that this script is using this
-    
-    run = wandb.init(project="nyc_airbnb", group="cleaning", save_code=True)
-    artifact_local_path = run.use_artifact(args.input_artifact).file()
-    df = pd.read_csv(artifact_local_path)
-    # Drop outliers
-    min_price = args.min_price
-    max_price = args.max_price
-    idx = df['price'].between(min_price, max_price)
-    df = df[idx].copy()
-    # Convert last_review to datetime
-    df['last_review'] = pd.to_datetime(df['last_review'])
+        local_path = mlflow.artifacts.download_artifacts(artifact_uri=input_artifact)
 
-    idx = df['longitude'].between(-74.25, -73.50) & df['latitude'].between(40.5, 41.2)
-    df = df[idx].copy()
-    # Save the cleaned file
-    df.to_csv('clean_sample.csv',index=False)
+        df = pd.read_csv(local_path)
 
-    # log the new data.
-    artifact = wandb.Artifact(
-     args.output_artifact,
-     type=args.output_type,
-     description=args.output_description,
- )
-    artifact.add_file("clean_sample.csv")
-    run.log_artifact(artifact)
+        idx = df['price'].between(min_price, max_price)
+        df = df[idx].copy()
+
+        idx = df['longitude'].between(-74.25, -73.50) & df['latitude'].between(40.5, 41.2)
+        df = df[idx].copy()
+
+        output_path = os.path.join(os.getcwd(), output_artifact)
+        df.to_csv(output_path, index=False)
+
+        mlflow.log_artifact(output_path, artifact_path=output_type)
+
+        mlflow.log_param("output_description", output_description)
 
 
-# TODO: In the code below, fill in the data type for each argumemt. The data type should be str, float or int. 
-# TODO: In the code below, fill in a description for each argument. The description should be a string.
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Clean Airbnb data")
 
-    parser = argparse.ArgumentParser(description="A very basic data cleaning")
-  
-    parser.add_argument(
-        "--input_artifact", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--output_artifact", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--output_type", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--output_description", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--min_price", 
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
-    parser.add_argument(
-        "--max_price",
-        type = ## INSERT TYPE HERE: str, float or int,
-        help = ## INSERT DESCRIPTION HERE,
-        required = True
-    )
-
+    parser.add_argument("--input_artifact", type=str, required=True, help="Path to the input artifact (e.g. sample.csv:latest)")
+    parser.add_argument("--output_artifact", type=str, required=True, help="Name for the output artifact (e.g. clean_sample.csv)")
+    parser.add_argument("--output_type", type=str, required=True, help="The type of output data (e.g. cleaned_data)")
+    parser.add_argument("--output_description", type=str, required=True, help="Description of the cleaned data")
+    parser.add_argument("--min_price", type=float, required=True, help="Minimum price for filtering")
+    parser.add_argument("--max_price", type=float, required=True, help="Maximum price for filtering")
 
     args = parser.parse_args()
 
-    go(args)
+    go(
+        input_artifact=args.input_artifact,
+        output_artifact=args.output_artifact,
+        output_type=args.output_type,
+        output_description=args.output_description,
+        min_price=args.min_price,
+        max_price=args.max_price
+    )
