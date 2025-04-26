@@ -1,72 +1,78 @@
-#!/usr/bin/env python
-"""
-This script splits the provided dataframe in test and remainder
-"""
 import argparse
-import logging
+import os
 import pandas as pd
 import wandb
-import tempfile
 from sklearn.model_selection import train_test_split
-from wandb_utils.log_artifact import log_artifact
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
-logger = logging.getLogger()
+# Initialize wandb run
+run = wandb.init(project="Project-Build-an-ML-Pipeline-Starter-components_train_val_test_split")
 
+def main(args):
+    # Correct file path for the clean_sample.csv
+    file_path = args.input  # This is passed via the command line, so it's more flexible
 
-def go(args):
+    # Check if the file exists
+    if not os.path.isfile(file_path):
+        raise ValueError(f"Path is not a valid file: {file_path}")
 
-    run = wandb.init(job_type="train_val_test_split")
-    run.config.update(args)
+    # Log the initial artifact (input dataset)
+    artifact = wandb.Artifact("clean_sample.csv", type="dataset")
+    artifact.add_file(file_path)
+    run.log_artifact(artifact)
 
-    # Download input artifact. This will also note that this script is using this
-    # particular version of the artifact
-    logger.info(f"Fetching artifact {args.input}")
-    artifact_local_path = run.use_artifact(args.input).file()
+    # Load the dataset
+    df = pd.read_csv(file_path)
 
-    df = pd.read_csv(artifact_local_path)
+    # Retrieve parameters
+    test_size = float(args.test_size)
+    random_seed = int(args.random_seed)
+    stratify_by = args.stratify_by
 
-    logger.info("Splitting trainval and test")
-    trainval, test = train_test_split(
-        df,
-        test_size=args.test_size,
-        random_state=args.random_seed,
-        stratify=df[args.stratify_by] if args.stratify_by != 'none' else None,
-    )
+    # Check if the stratify column exists in the dataframe
+    if stratify_by not in df.columns:
+        raise ValueError(f"Column '{stratify_by}' not found in the dataset.")
 
-    # Save to output files
-    for df, k in zip([trainval, test], ['trainval', 'test']):
-        logger.info(f"Uploading {k}_data.csv dataset")
-        with tempfile.NamedTemporaryFile("w") as fp:
+    # Split the data
+    train_val, test = train_test_split(df, test_size=test_size, random_state=random_seed, stratify=df[stratify_by])
+    train, val = train_test_split(train_val, test_size=test_size, random_state=random_seed, stratify=train_val[stratify_by])
 
-            df.to_csv(fp.name, index=False)
+    # Save the splits to CSV files
+    train_file = "train.csv"
+    val_file = "val.csv"
+    test_file = "test.csv"
 
-            log_artifact(
-                f"{k}_data.csv",
-                f"{k}_data",
-                f"{k} split of dataset",
-                fp.name,
-                run,
-            )
+    train.to_csv(train_file, index=False)
+    val.to_csv(val_file, index=False)
+    test.to_csv(test_file, index=False)
 
+    # Log the train, validation, and test splits as artifacts
+    train_artifact = wandb.Artifact("train.csv", type="dataset")
+    train_artifact.add_file(train_file)
+    run.log_artifact(train_artifact)
+
+    val_artifact = wandb.Artifact("val.csv", type="dataset")
+    val_artifact.add_file(val_file)
+    run.log_artifact(val_artifact)
+
+    test_artifact = wandb.Artifact("test.csv", type="dataset")
+    test_artifact.add_file(test_file)
+    run.log_artifact(test_artifact)
+
+    # Finish the wandb run
+    run.finish()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Split test and remainder")
+    # Argument parser for the CLI
+    parser = argparse.ArgumentParser()
 
-    parser.add_argument("input", type=str, help="Input artifact to split")
+    # Required arguments
+    parser.add_argument("--input", type=str, required=True, help="Path to the input dataset (CSV file)")
+    parser.add_argument("--test_size", type=float, required=True, help="Proportion of the dataset to be used as the test set")
+    parser.add_argument("--random_seed", type=int, default=42, help="Random seed for splitting the dataset")
+    parser.add_argument("--stratify_by", type=str, required=True, help="Column to stratify by when splitting the dataset")
 
-    parser.add_argument(
-        "test_size", type=float, help="Size of the test split. Fraction of the dataset, or number of items"
-    )
-
-    parser.add_argument(
-        "--random_seed", type=int, help="Seed for random number generator", default=42, required=False
-    )
-
-    parser.add_argument(
-        "--stratify_by", type=str, help="Column to use for stratification", default='none', required=False
-    )
-
+    # Parse arguments
     args = parser.parse_args()
 
-    go(args)
+    # Call main function with parsed arguments
+    main(args)

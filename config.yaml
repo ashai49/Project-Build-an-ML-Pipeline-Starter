@@ -2,6 +2,7 @@ main:
   project_name: nyc_airbnb
   experiment_name: development
   steps: all
+  components_repository: https://github.com/ashai49/Project-Build-an-ML-Pipeline-Starter
 
 etl:
   sample: "sample1.csv"

@@ -2,47 +2,36 @@
 """
 This script download a URL to a local destination
 """
-import argparse
-import logging
+import sys
 import os
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "wandb_utils")))
+
 import wandb
-
-from wandb_utils.log_artifact import log_artifact
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
-logger = logging.getLogger()
+import mlflow
+from components.wandb_utils.log_artifact import log_artifact 
 
 
-def go(args):
+def main(config):
+    
+    artifact_name = "raw_data"
+    artifact_type = "dataset"
+    artifact_description = "Raw data artifact"
+    filename = config["etl"]["data_path"]
 
-    run = wandb.init(job_type="download_file")
-    run.config.update(args)
+   
+    wandb_run = wandb.init(project="your_project_name", job_type="data_preparation")
 
-    logger.info(f"Returning sample {args.sample}")
-    logger.info(f"Uploading {args.artifact_name} to Weights & Biases")
-    log_artifact(
-        args.artifact_name,
-        args.artifact_type,
-        args.artifact_description,
-        os.path.join("data", args.sample),
-        run,
-    )
+    log_artifact(artifact_name, artifact_type, artifact_description, filename, wandb_run)
 
+    mlflow.log_param("artifact_name", artifact_name)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download URL to a local destination")
+    import hydra
+    from omegaconf import DictConfig
 
-    parser.add_argument("sample", type=str, help="Name of the sample to download")
+    @hydra.main(config_name="config.yaml")
+    def run_etl(config: DictConfig):
+        main(config)
 
-    parser.add_argument("artifact_name", type=str, help="Name for the output artifact")
-
-    parser.add_argument("artifact_type", type=str, help="Output artifact type.")
-
-    parser.add_argument(
-        "artifact_description", type=str, help="A brief description of this artifact"
-    )
-
-    args = parser.parse_args()
-
-    go(args)
+    run_etl()

@@ -1,0 +1,13 @@
+max_depth: 10
+max_tfidf_features: 50
+min_samples_leaf: 1
+min_samples_split: 2
+n_estimators: 100
+output_artifact: "random_forest_model"
+output_type: "model"
+random_seed: 42
+random_state: 42
+rf_config: "random_forest_config.json"
+stratify_by: "neighbourhood_group"
+trainval_artifact: "ashai49-western-governors-university/Project-Build-an-ML-Pipeline-Starter-components_train_val_test_split/train.csv:v0"
+val_size: 0.2

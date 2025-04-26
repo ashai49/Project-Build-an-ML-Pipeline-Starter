@@ -1,0 +1,8 @@
+name: train_random_forest
+
+entry_points:
+  main:
+    parameters:
+      config: {type: str, default: config.yaml}
+    command: >
+      python main.py
