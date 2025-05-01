@@ -1,0 +1,22 @@
+steps: "basic_cleaning,train_val_test_split,train_random_forest,test_regression_model"
+
+input_artifact: "sample.csv:latest"
+output_artifact: "clean_sample.csv"
+output_type: "cleaned_data"
+output_description: "Data with outliers removed"
+
+min_price: 50
+max_price: 500
+
+test_size: 0.2
+random_seed: 42
+stratify_by: "neighbourhood_group"
+val_size: 0.2
+
+max_depth: 10
+n_estimators: 100
+min_samples_split: 2
+min_samples_leaf: 1
+max_features: "auto"
+
+model_export: "random_forest_model"

@@ -10,10 +10,4 @@ entry_points:
       min_price: {type: float}
       max_price: {type: float}
     command: >
-      python src/basic_cleaning/run.py 
-      --input_artifact ${input_artifact} 
-      --output_artifact ${output_artifact} 
-      --output_type ${output_type} 
-      --output_description ${output_description} 
-      --min_price ${min_price} 
-      --max_price ${max_price}
+      python src/basic_cleaning/run.py --input_artifact {input_artifact} --output_artifact {output_artifact} --output_type {output_type} --output_description {output_description} --min_price {min_price} --max_price {max_price}

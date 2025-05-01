@@ -4,26 +4,5 @@ conda_env: conda.yaml
 
 entry_points:
   main:
-    parameters:
-      trainval_artifact: {type: str}
-      val_size: {type: float}
-      random_seed: {type: int, default: 42}
-      stratify_by: {type: str, default: "none"}
-      rf_config: {type: str}
-      max_tfidf_features: {type: int, default: 10}
-      output_artifact: {type: str}
-      output_type: {type: str, default: "model"}
-      max_depth: {type: int, default: null}
-      n_estimators: {type: int, default: 100}
     command: >
-      python run.py 
-      --trainval_artifact {trainval_artifact}
-      --val_size {val_size}
-      --random_seed {random_seed}
-      --stratify_by {stratify_by}
-      --rf_config {rf_config}
-      --max_tfidf_features {max_tfidf_features}
-      --output_artifact {output_artifact}
-      --output_type {output_type}
-      --max_depth {max_depth}
-      --n_estimators {n_estimators}
+      python run.py
