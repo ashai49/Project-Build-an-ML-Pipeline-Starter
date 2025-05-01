@@ -4,7 +4,7 @@ import mlflow
 import os
 import wandb
 
-def go(input_artifact, output_artifact, output_type, output_description, min_price, max_price):
+def go(input_artifact, output_artifact, output_type, output_description, min_price, max_price, sample):
     with mlflow.start_run():
         # Initialize wandb run
         run = wandb.init(project="nyc_airbnb", job_type="basic_cleaning")
@@ -12,7 +12,12 @@ def go(input_artifact, output_artifact, output_type, output_description, min_pri
         # Download the input artifact
         artifact = run.use_artifact(input_artifact, type='raw_data')
         local_path = artifact.download()
-        local_file = os.path.join(local_path, os.listdir(local_path)[0])  # assumes only one file in artifact
+
+        # Determine file path to load
+        if sample:
+            local_file = os.path.join(local_path, sample)
+        else:
+            local_file = os.path.join(local_path, os.listdir(local_path)[0])  # default: first file
 
         print(f"Downloaded input artifact to: {local_file}")
 
@@ -54,6 +59,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_description", type=str, required=True, help="Description of the output artifact")
     parser.add_argument("--min_price", type=float, required=True, help="Minimum price for filtering")
     parser.add_argument("--max_price", type=float, required=True, help="Maximum price for filtering")
+    parser.add_argument("--sample", type=str, required=False, default="", help="Optional specific sample filename inside the artifact")
 
     args = parser.parse_args()
 
@@ -63,5 +69,6 @@ if __name__ == "__main__":
         output_type=args.output_type,
         output_description=args.output_description,
         min_price=args.min_price,
-        max_price=args.max_price
+        max_price=args.max_price,
+        sample=args.sample
     )
