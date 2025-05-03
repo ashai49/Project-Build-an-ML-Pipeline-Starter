@@ -1,160 +1,135 @@
+#!/usr/bin/env python
+"""
+Train Random Forest model with unique output directories
+"""
+import argparse
+import json
 import logging
 import os
-import shutil
-import matplotlib.pyplot as plt
-import mlflow
-import json
 import pandas as pd
-import numpy as np
-from sklearn.compose import ColumnTransformer
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.impute import SimpleImputer
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OrdinalEncoder, FunctionTransformer, OneHotEncoder
 import wandb
+from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error
-from sklearn.pipeline import Pipeline, make_pipeline
-
-from omegaconf import OmegaConf
-import hydra
-from hydra.utils import to_absolute_path
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+import mlflow
+import mlflow.sklearn
+import tempfile
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)-15s %(message)s")
 logger = logging.getLogger()
 
-def delta_date_feature(dates):
-    date_sanitized = pd.DataFrame(dates).apply(pd.to_datetime)
-    return date_sanitized.apply(lambda d: (d.max() - d).dt.days, axis=0).to_numpy()
+def load_rf_config(config_path):
+    """Load random forest config from JSON file"""
+    with open(config_path) as f:
+        return json.load(f)
 
-@hydra.main(config_path="../../config", config_name="config")
-def go(cfg):
-    # Log config
-    logger.info(OmegaConf.to_yaml(cfg))
+def go(args):
+    run = wandb.init(job_type="train_random_forest")
+    
+    try:
+        # Load RF config
+        rf_config = load_rf_config(args.rf_config)
+        run.config.update(rf_config)
+        
+        # Create unique output directory
+        model_dir = tempfile.mkdtemp(prefix="random_forest_")
+        logger.info(f"Using temporary model directory: {model_dir}")
+        
+        # Load data
+        logger.info("Downloading training data")
+        train_data = run.use_artifact(args.train_artifact)
+        train_path = train_data.file()
+        df_train = pd.read_csv(train_path)
+        X_train = df_train.drop("price", axis=1)
+        y_train = df_train["price"]
 
-    run = wandb.init(project="nyc_airbnb", job_type="train_random_forest")
-    run.config.update(OmegaConf.to_container(cfg, resolve=True))
+        logger.info("Downloading validation data")
+        val_data = run.use_artifact(args.val_artifact)
+        val_path = val_data.file()
+        df_val = pd.read_csv(val_path)
+        X_val = df_val.drop("price", axis=1)
+        y_val = df_val["price"]
 
-    trainval_local_path = run.use_artifact(cfg.trainval_artifact).file()
-    df = pd.read_csv(trainval_local_path)
-    y = df.pop("price")
+        # Preprocessing pipeline
+        numerical_features = ["minimum_nights", "number_of_reviews", "reviews_per_month"]
+        categorical_features = ["neighbourhood_group", "room_type"]
 
-    logger.info(f"Minimum price: {y.min()}, Maximum price: {y.max()}")
+        numerical_transformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='median')),
+            ('scaler', StandardScaler())
+        ])
 
-    X_train, X_val, y_train, y_val = train_test_split(
-        df,
-        y,
-        test_size=cfg.val_size,
-        stratify=df[cfg.stratify_by],
-        random_state=cfg.random_seed
-    )
+        categorical_transformer = Pipeline(steps=[
+            ('imputer', SimpleImputer(strategy='most_frequent')),
+            ('onehot', OneHotEncoder(handle_unknown='ignore'))
+        ])
 
-    logger.info("Preparing sklearn pipeline")
-    sk_pipe, processed_features = get_inference_pipeline(cfg.modeling.random_forest, cfg.max_tfidf_features)
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('num', numerical_transformer, numerical_features),
+                ('cat', categorical_transformer, categorical_features)
+            ])
 
-    logger.info("Fitting")
-    sk_pipe.fit(X_train, y_train)
+        # Full pipeline
+        sk_pipe = Pipeline(steps=[
+            ('preprocessor', preprocessor),
+            ('random_forest', RandomForestRegressor(**rf_config))
+        ])
 
-    logger.info("Scoring")
-    r2 = sk_pipe.score(X_val, y_val)
-    y_pred = sk_pipe.predict(X_val)
-    mae = mean_absolute_error(y_val, y_pred)
+        # Train
+        logger.info("Training model")
+        sk_pipe.fit(X_train, y_train)
 
-    logger.info(f"R^2: {r2}")
-    logger.info(f"MAE: {mae}")
+        # Evaluate
+        logger.info("Evaluating model")
+        y_pred = sk_pipe.predict(X_val)
+        mae = mean_absolute_error(y_val, y_pred)
+        r2 = r2_score(y_val, y_pred)
+        logger.info(f"MAE: {mae:.2f}, R2: {r2:.2f}")
 
-    if os.path.exists("random_forest_dir"):
-        shutil.rmtree("random_forest_dir")
+        # Log metrics
+        run.summary["mae"] = mae
+        run.summary["r2"] = r2
 
-    mlflow.sklearn.save_model(sk_pipe, path="random_forest_dir", input_example=X_train.iloc[:5])
-
-    artifact = wandb.Artifact(
-        cfg.output_artifact,
-        type=cfg.output_type,
-        description="Trained Random Forest model",
-        metadata=OmegaConf.to_container(cfg.modeling.random_forest, resolve=True)
-    )
-    artifact.add_dir("random_forest_dir")
-    run.log_artifact(artifact)
-
-    fig_feat_imp = plot_feature_importance(sk_pipe, processed_features)
-    run.log({"feature_importance": wandb.Image(fig_feat_imp)})
-    run.summary["r2"] = r2
-    run.summary["mae"] = mae
-
-    run.finish()
-
-def plot_feature_importance(pipe, feat_names):
-    feat_imp = pipe["random_forest"].feature_importances_[: len(feat_names) - 1]
-    nlp_importance = sum(pipe["random_forest"].feature_importances_[len(feat_names) - 1:])
-    feat_imp = np.append(feat_imp, nlp_importance)
-    fig, ax = plt.subplots(figsize=(10, 10))
-    ax.bar(range(len(feat_imp)), feat_imp, color="r", align="center")
-    ax.set_xticks(range(len(feat_imp)))
-    ax.set_xticklabels(np.array(feat_names), rotation=90)
-    fig.tight_layout()
-    return fig
-
-def get_inference_pipeline(rf_config, max_tfidf_features):
-    ordinal_categorical = ["room_type"]
-    non_ordinal_categorical = ["neighbourhood_group"]
-
-    ordinal_categorical_preproc = OrdinalEncoder()
-    non_ordinal_categorical_preproc = make_pipeline(
-        SimpleImputer(strategy="most_frequent"),
-        OneHotEncoder()
-    )
-
-    zero_imputed = [
-        "minimum_nights", "number_of_reviews", "reviews_per_month",
-        "calculated_host_listings_count", "availability_365",
-        "longitude", "latitude"
-    ]
-    zero_imputer = SimpleImputer(strategy="constant", fill_value=0)
-
-    date_imputer = make_pipeline(
-        SimpleImputer(strategy="constant", fill_value="2010-01-01"),
-        FunctionTransformer(delta_date_feature, check_inverse=False, validate=False)
-    )
-
-    reshape_to_1d = FunctionTransformer(np.reshape, kw_args={"newshape": -1})
-    name_tfidf = make_pipeline(
-        SimpleImputer(strategy="constant", fill_value=""),
-        reshape_to_1d,
-        TfidfVectorizer(
-            binary=False,
-            max_features=max_tfidf_features,
-            stop_words="english"
+        # Save model
+        logger.info("Exporting model")
+        mlflow.sklearn.save_model(sk_pipe, model_dir)
+        
+        artifact = wandb.Artifact(
+            args.output_artifact,
+            type="model",
+            description="Random Forest model with preprocessing",
+            metadata=rf_config
         )
-    )
+        artifact.add_dir(model_dir)
+        run.log_artifact(artifact)
 
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("ordinal_cat", ordinal_categorical_preproc, ordinal_categorical),
-            ("non_ordinal_cat", non_ordinal_categorical_preproc, non_ordinal_categorical),
-            ("impute_zero", zero_imputer, zero_imputed),
-            ("transform_date", date_imputer, ["last_review"]),
-            ("transform_name", name_tfidf, ["name"]),
-        ],
-        remainder="drop",
-    )
-
-    processed_features = ordinal_categorical + non_ordinal_categorical + zero_imputed + ["last_review", "name"]
-
-    rf = RandomForestRegressor(
-        max_depth=rf_config.get("max_depth"),
-        n_estimators=rf_config.get("n_estimators"),
-        min_samples_split=rf_config.get("min_samples_split", 2),
-        min_samples_leaf=rf_config.get("min_samples_leaf", 1),
-        random_state=rf_config.get("random_state", 42)
-    )
-
-    sk_pipe = Pipeline(steps=[
-        ("preprocessor", preprocessor),
-        ("random_forest", rf)
-    ])
-
-    return sk_pipe, processed_features
+    except Exception as e:
+        logger.error(f"Error during training: {str(e)}")
+        raise
+    finally:
+        run.finish()
+        # Clean up temporary directory
+        if 'model_dir' in locals():
+            try:
+                import shutil
+                shutil.rmtree(model_dir)
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary directory: {str(e)}")
 
 if __name__ == "__main__":
-    go()
+    parser = argparse.ArgumentParser(description="Train Random Forest")
+
+    parser.add_argument("--train_artifact", type=str, required=True)
+    parser.add_argument("--val_artifact", type=str, required=True)
+    parser.add_argument("--output_artifact", type=str, required=True)
+    parser.add_argument("--rf_config", type=str, required=True)
+    parser.add_argument("--val_size", type=float, default=0.2)
+    parser.add_argument("--random_seed", type=int, default=42)
+    parser.add_argument("--stratify_by", type=str, default="none")
+
+    args = parser.parse_args()
+    go(args)
