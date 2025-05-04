@@ -25,6 +25,9 @@ modeling:
   max_tfidf_features: 5
   # NOTE: you can put here any parameter that is accepted by the constructor of
   # RandomForestRegressor. This is a subsample, but more could be added:
+  trainval_artifact: "trainval_data.csv"  # Added explicit artifact names
+  test_artifact: "test_data_split.csv"    # Changed from test_data.csv
+  model_artifact: "random_forest_model"   # Added model artifact name
   random_forest:
     n_estimators: 200
     max_depth: 50
@@ -36,3 +39,7 @@ modeling:
     max_features: 0.5
     # DO not change the following
     oob_score: true
+
+test_regression_model:
+  test_dataset: "test_data_split.csv:latest"  # Updated to match new name
+  model_artifact: "random_forest_model:prod"  # Explicit model reference
