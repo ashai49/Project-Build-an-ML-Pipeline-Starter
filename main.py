@@ -51,9 +51,7 @@ def go(config: DictConfig):
             )
 
         if "basic_cleaning" in active_steps:
-            ##################
-            # Implement here #
-            ##################
+
             mlflow.run(
             os.path.join(hydra.utils.get_original_cwd(), "src", "basic_cleaning"),
             entry_point="main",
@@ -66,10 +64,9 @@ def go(config: DictConfig):
                 "max_price": config["etl"]["max_price"],
             },
         )
+
         if "data_check" in active_steps:
-            ##################
-            # Implement here #
-            ##################
+            
             mlflow.run(
             os.path.join(hydra.utils.get_original_cwd(), "src", "data_check"),
             entry_point="main",
@@ -83,9 +80,7 @@ def go(config: DictConfig):
         )
 
         if "data_split" in active_steps:
-            ##################
-            # Implement here #
-            ##################
+            
             mlflow.run(
             f"{config['main']['components_repository']}/train_val_test_split",
             "main",
@@ -98,9 +93,6 @@ def go(config: DictConfig):
         )
 
         if "train_random_forest" in active_steps:
-            ##################
-            # Implement here #
-            ##################
 
             # NOTE: we need to serialize the random forest configuration into JSON
             rf_config = os.path.abspath("rf_config.json")
@@ -124,12 +116,9 @@ def go(config: DictConfig):
             },
         )
 
-            pass
 
         if "test_regression_model" in active_steps:
-            ##################
-            # Implement here #
-            ##################
+            
             mlflow.run(
             os.path.join(hydra.utils.get_original_cwd(), "components", "test_regression_model"),
             entry_point="main",
